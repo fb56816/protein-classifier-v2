@@ -506,19 +506,10 @@ if st.button("🧬 Predecir Familia", type="primary", use_container_width=True):
                 for i, (fam, prob) in enumerate(top):
                     pfam_info = get_pfam_info(fam)
                     fam_name = pfam_info.get('nombre', '') if pfam_info else ''
-                    bar_color = "#11998e" if i == 0 else "#a8d8ea"
-                    st.markdown(f"""
-                    <div style="display:flex;align-items:center;margin-bottom:0.5rem;">
-                        <div style="flex:1;">
-                            <strong>{fam}</strong>
-                            {f'<br><small>{fam_name}</small>' if fam_name else ''}
-                        </div>
-                        <div style="width:120px;background:#e0e0e0;border-radius:8px;overflow:hidden;height:24px;">
-                            <div style="width:{prob*100:.0f}%;background:{bar_color};height:100%;border-radius:8px;"></div>
-                        </div>
-                        <div style="width:60px;text-align:right;font-weight:bold;">{prob:.1%}</div>
-                    </div>
-                    """, unsafe_allow_html=True)
+                    is_top = i == 0
+                    label = f"**{fam}**" + (f" — {fam_name}" if fam_name else "")
+                    st.markdown(label)
+                    st.progress(min(prob, 1.0), text=f"{prob:.1%}")
     else:
         st.warning("Ingresa una secuencia para predecir")
 
