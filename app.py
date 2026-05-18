@@ -1,6 +1,7 @@
 """
 Interfaz visual para el Clasificador de Familias de Proteínas.
 Soporta embeddings ESM-2 + features manuales.
+Incluye información biológica detallada de aminoácidos y familias Pfam.
 Ejecutar con: streamlit run app.py
 """
 
@@ -10,6 +11,16 @@ import numpy as np
 import pandas as pd
 import json
 import os
+import sys
+import torch
+import torch.nn as nn
+import pickle
+from datos_biologicos import AMINOACIDOS_INFO, PFAM_DESCRIPCIONES, get_pfam_info
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+if SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, SCRIPT_DIR)
+os.chdir(SCRIPT_DIR)
 
 AMINOACIDOS = 'ACDEFGHIKLMNPQRSTVWY'
 
@@ -45,6 +56,26 @@ GRUPOS_AA = {
     'aliphatic': 'ILV',
     'tiny': 'AGS',
     'special': 'CP',
+}
+
+GRUPOS_COLORES = {
+    'nonpolar': '#FF6B6B',
+    'polar_uncharged': '#4ECDC4',
+    'positively_charged': '#45B7D1',
+    'negatively_charged': '#F7DC6F',
+    'aromatic': '#BB8FCE',
+    'aliphatic': '#E59866',
+    'tiny': '#82E0AA',
+    'special': '#F1948A',
+}
+
+TIPO_COLORES = {
+    'No polar': '#FF6B6B',
+    'Polar': '#4ECDC4',
+    'Cargado positivamente': '#45B7D1',
+    'Cargado negativamente': '#F7DC6F',
+    'Aromático': '#BB8FCE',
+    'Especial': '#F1948A',
 }
 
 
@@ -117,16 +148,57 @@ def extraer_caracteristicas_manuales(secuencia):
     return feats
 
 
+def get_aa_tipo(code):
+    info = AMINOACIDOS_INFO.get(code, {})
+    tipo = info.get('tipo', '')
+    if 'cargado negativamente' in tipo.lower() or 'ácido' in tipo.lower():
+        return 'Cargado negativamente'
+    elif 'cargado positivamente' in tipo.lower() or 'básico' in tipo.lower():
+        return 'Cargado positivamente'
+    elif 'aromático' in tipo.lower():
+        return 'Aromático'
+    elif 'especial' in tipo.lower() or 'imino' in tipo.lower():
+        return 'Especial'
+    elif 'polar' in tipo.lower():
+        return 'Polar'
+    else:
+        return 'No polar'
+
+
+def color_seq_bar(secuencia):
+    colored = []
+    for aa in secuencia:
+        tipo = get_aa_tipo(aa)
+        color = TIPO_COLORES.get(tipo, '#CCCCCC')
+        colored.append(
+            f'<span style="background-color:{color};color:#1a1a2e;padding:2px 4px;'
+            f'border-radius:3px;font-family:monospace;font-size:13px;font-weight:bold;'
+            f'margin:1px;display:inline-block;" title="{AMINOACIDOS_INFO.get(aa, {}).get("nombre", aa)} ({tipo})">{aa}</span>'
+        )
+    return ''.join(colored)
+
+
+def show_pfam_info(familia_id):
+    info = get_pfam_info(familia_id)
+    if info:
+        st.markdown(f"#### {info.get('nombre', familia_id)}")
+        st.markdown(f"**{info.get('descripcion', '')}**")
+        col_a, col_b = st.columns(2)
+        with col_a:
+            st.markdown(f"🏷️ **Tipo:** {info.get('tipo', 'N/A')}")
+            st.markdown(f"🌍 **Organismos:** {info.get('organismos', 'N/A')}")
+        with col_b:
+            st.markdown(f"⚡ **Función:** {info.get('funcion', 'N/A')}")
+    else:
+        st.info(f"Información detallada de {familia_id} no disponible en la base de datos local.")
+
+
 st.set_page_config(
-    page_title="Clasificador de Proteínas",
+    page_title="Clasificador de Proteínas v3",
     page_icon="🧬",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded",
 )
-
-
-import torch
-import torch.nn as nn
-import pickle
 
 
 class ProteinMLP(nn.Module):
@@ -228,123 +300,319 @@ def predecir_familia(secuencia):
     return familia, top_predicciones
 
 
-st.title("🧬 Clasificador de Familias de Proteínas")
-mode_str = "ESM-2 + Features manuales" if use_embeddings else "Features manuales"
-st.markdown(f"""
-**IA para clasificación de proteínas** | Modo: **{mode_str}**
-""")
+st.markdown("""
+<style>
+    .main-header {
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+        padding: 2rem;
+        border-radius: 15px;
+        margin-bottom: 1.5rem;
+    }
+    .main-header h1 {
+        color: #e94560;
+        margin: 0;
+        font-size: 2.5rem;
+    }
+    .main-header p {
+        color: #a8d8ea;
+        margin: 0.5rem 0 0 0;
+        font-size: 1.1rem;
+    }
+    .metric-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        padding: 1rem;
+        border-radius: 10px;
+        color: white;
+        text-align: center;
+    }
+    .result-card {
+        background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+        padding: 1.5rem;
+        border-radius: 12px;
+        color: white;
+        text-align: center;
+        margin-bottom: 1rem;
+    }
+    .aa-card {
+        background: #f8f9fa;
+        border-left: 4px solid #4ECDC4;
+        padding: 0.75rem 1rem;
+        border-radius: 0 8px 8px 0;
+        margin-bottom: 0.5rem;
+    }
+    .pfam-card {
+        background: linear-gradient(135deg, #2c3e50 0%, #3498db 100%);
+        padding: 1rem;
+        border-radius: 10px;
+        color: white;
+    }
+    .seq-display {
+        background: #1a1a2e;
+        padding: 1rem;
+        border-radius: 8px;
+        overflow-x: auto;
+        white-space: normal;
+        word-wrap: break-word;
+        line-height: 2;
+    }
+    div[data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #1a1a2e 0%, #16213e 100%);
+    }
+    div[data-testid="stSidebar"] * {
+        color: #e0e0e0 !important;
+    }
+    .legend-item {
+        display: inline-block;
+        margin: 0.2rem 0.4rem;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+st.markdown("""
+<div class="main-header">
+    <h1>🧬 Clasificador de Familias de Proteínas</h1>
+    <p>IA para clasificación de proteínas basada en 5,513 familias Pfam | Precisión: 92%</p>
+</div>
+""", unsafe_allow_html=True)
 
 with st.sidebar:
-    st.header("ℹ️ Información")
-    st.markdown(f"""
-    ### Modelo actual
-    - Familias: {len(encoder.classes_)}
-    - Precisión: {model_info.get('accuracy', 'N/A')}
-    - Features: {model_info.get('num_features', 'N/A')}
-    - Embeddings: {'Sí (' + str(model_info.get('esm_model', '')) + ')' if use_embeddings else 'No'}
+    st.markdown("## ⚙️ Panel de Control")
 
-    ### Aminoácidos válidos
-    `A C D E F G H I K L M N P Q R S T V W Y`
-    """)
+    st.markdown("### 🧪 Modelo Actual")
+    col_m1, col_m2 = st.columns(2)
+    with col_m1:
+        st.metric("Familias", f"{len(encoder.classes_):,}")
+        st.metric("Features", model_info.get('num_features', 'N/A'))
+    with col_m2:
+        st.metric("Precisión", f"{model_info.get('accuracy', 0.92):.1%}")
+        st.metric("Embeddings", "No" if not use_embeddings else "Sí")
 
-    st.header("📊 Familias Disponibles")
+    st.markdown("---")
+    st.markdown("### 🔍 Buscar Familia")
     familias = encoder.classes_
-    search = st.text_input("Buscar familia:", "")
+    search = st.text_input("Nombre de familia:", placeholder="PF00001...")
     filtered = [f for f in familias if search.upper() in f.upper()] if search else familias
-    for fam in filtered[:50]:
-        st.text(f"• {fam}")
-    if len(filtered) > 50:
-        st.text(f"... y {len(filtered) - 50} más")
+    if search and filtered:
+        for fam in filtered[:30]:
+            pfam_info = get_pfam_info(fam)
+            if pfam_info:
+                st.markdown(f"**{fam}** — {pfam_info.get('nombre', '')}")
+            else:
+                st.text(f"  {fam}")
+        if len(filtered) > 30:
+            st.text(f"  ... y {len(filtered) - 30} más")
+    elif search:
+        st.warning("No se encontraron familias")
+    else:
+        st.info("Escribe para buscar entre 5,513 familias")
 
-col1, col2 = st.columns([2, 1])
+    st.markdown("---")
+    st.markdown("### 🧪 Aminoácidos")
+    aa_search = st.text_input("Buscar aminoácido:", placeholder="A, Ala, Alanina...")
+    if aa_search:
+        matches = []
+        for code, info in AMINOACIDOS_INFO.items():
+            if aa_search.upper() in code.upper() or aa_search.lower() in info['nombre'].lower() or aa_search.lower() in info['abreviatura'].lower():
+                matches.append((code, info))
+        if matches:
+            for code, info in matches:
+                tipo = get_aa_tipo(code)
+                color = TIPO_COLORES.get(tipo, '#CCC')
+                st.markdown(f"""
+                <div class="aa-card" style="border-left-color:{color};">
+                    <strong style="font-size:1.2em;color:{color};">{code}</strong> — {info['nombre']} ({info['abreviatura']})<br>
+                    <small>{info['tipo']} | PM: {info['peso_molecular']} Da | {info['carga']}</small>
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.warning("No encontrado")
+    else:
+        st.markdown("**Leyenda de colores:**")
+        for tipo, color in TIPO_COLORES.items():
+            st.markdown(f'<span style="background:{color};color:#1a1a2e;padding:2px 8px;border-radius:4px;font-weight:bold;font-size:0.85em;">{tipo}</span>', unsafe_allow_html=True)
 
-with col1:
-    st.subheader("📝 Ingresa tu secuencia")
+st.markdown("### 📝 Ingresa tu secuencia proteica")
 
-    secuencia_input = st.text_area(
-        "Secuencia de aminoácidos:",
-        height=150,
-        placeholder="Ej: MKWVTFISLLFLFSSAYSRG...",
-        help="Ingresa la secuencia completa de la proteína"
+secuencia_input = st.text_area(
+    "",
+    height=120,
+    placeholder="Ej: MKWVTFISLLFLFSSAYSRGVFRDTHKSEIAHRFKDLGEEHFKGLV...",
+    help="Ingresa la secuencia completa de la proteína usando los 20 aminoácidos estándar (A C D E F G H I K L M N P Q R S T V W Y)",
+    label_visibility="collapsed"
+)
+
+if secuencia_input.strip():
+    secuencia_limpia = ''.join(
+        c for c in secuencia_input.upper()
+        if c in 'ACDEFGHIKLMNPQRSTVWY'
     )
 
-    if st.button("🔬 Predecir Familia", type="primary", use_container_width=True):
-        if secuencia_input.strip():
-            secuencia_limpia = ''.join(
-                c for c in secuencia_input.upper()
-                if c in 'ACDEFGHIKLMNPQRSTVWY'
-            )
+    if secuencia_limpia:
+        st.markdown("#### 🔬 Secuencia analizada")
+        display_seq = secuencia_limpia if len(secuencia_limpia) <= 200 else secuencia_limpia[:200] + f"... ({len(secuencia_limpia)} aa total)"
+        st.markdown(
+            f'<div class="seq-display">{color_seq_bar(display_seq[:200])}</div>',
+            unsafe_allow_html=True
+        )
 
-            if len(secuencia_limpia) < 10:
-                st.error("⚠️ La secuencia es muy corta (mínimo 10 aminoácidos)")
-            else:
-                with st.spinner("Analizando secuencia..."):
-                    familia, top = predecir_familia(secuencia_limpia)
+        col_s1, col_s2, col_s3, col_s4 = st.columns(4)
+        with col_s1:
+            st.metric("Longitud", f"{len(secuencia_limpia)} aa")
+        with col_s2:
+            peso = len(secuencia_limpia) * 110
+            st.metric("Peso aprox.", f"{peso:,} Da")
+        with col_s3:
+            pct_charged = ((secuencia_limpia.count('K') + secuencia_limpia.count('R') + secuencia_limpia.count('H') + secuencia_limpia.count('D') + secuencia_limpia.count('E')) / len(secuencia_limpia)) * 100
+            st.metric("Cargados", f"{pct_charged:.1f}%")
+        with col_s4:
+            pct_hydrophobic = sum(secuencia_limpia.count(aa) for aa in 'AILMFVW') / len(secuencia_limpia) * 100
+            st.metric("Hidrofóbicos", f"{pct_hydrophobic:.1f}%")
 
-                st.success("✅ Predicción completada")
-
-                st.markdown("### 🎯 Resultado")
-                st.metric(label="Familia Predicha", value=familia)
-
-                st.markdown("### 📊 Probabilidades")
-                df_probs = pd.DataFrame({
-                    "Familia": [t[0] for t in top],
-                    "Probabilidad": [t[1] for t in top]
-                })
-
-                st.bar_chart(df_probs.set_index("Familia"), use_container_width=True)
-                st.dataframe(
-                    df_probs.style.format({"Probabilidad": "{:.2%}"}),
-                    use_container_width=True,
-                    hide_index=True
-                )
-        else:
-            st.warning("⚠️ Ingresa una secuencia para predecir")
-
-with col2:
-    st.subheader("📈 Estadísticas")
-
+if st.button("🧬 Predecir Familia", type="primary", use_container_width=True):
     if secuencia_input.strip():
         secuencia_limpia = ''.join(
             c for c in secuencia_input.upper()
             if c in 'ACDEFGHIKLMNPQRSTVWY'
         )
 
-        if secuencia_limpia:
-            composicion = {
-                aa: secuencia_limpia.count(aa) / len(secuencia_limpia) * 100
-                for aa in AMINOACIDOS
-            }
+        if len(secuencia_limpia) < 10:
+            st.error("La secuencia es muy corta (mínimo 10 aminoácidos)")
+        else:
+            with st.spinner("Analizando secuencia con IA..."):
+                familia, top = predecir_familia(secuencia_limpia)
 
-            st.metric("Longitud", f"{len(secuencia_limpia)} aa")
-            st.metric("Peso molecular aprox.", f"{len(secuencia_limpia) * 110:.0f} Da")
+            st.markdown(f"""
+            <div class="result-card">
+                <h2 style="margin:0;color:white;">🎯 Familia Predicha</h2>
+                <h1 style="margin:0.5rem 0;color:white;">{familia}</h1>
+                <p style="margin:0;color:#e8f5e9;">Confianza: {top[0][1]:.1%}</p>
+            </div>
+            """, unsafe_allow_html=True)
 
-            top_aa = sorted(composicion.items(), key=lambda x: x[1], reverse=True)[:5]
-            nombres_aa = {
-                'A': 'Alanina', 'C': 'Cisteína', 'D': 'Ác. Aspártico',
-                'E': 'Ác. Glutámico', 'F': 'Fenilalanina', 'G': 'Glicina',
-                'H': 'Histidina', 'I': 'Isoleucina', 'K': 'Lisina',
-                'L': 'Leucina', 'M': 'Metionina', 'N': 'Asparagina',
-                'P': 'Prolina', 'Q': 'Glutamina', 'R': 'Arginina',
-                'S': 'Serina', 'T': 'Treonina', 'V': 'Valina',
-                'W': 'Triptófano', 'Y': 'Tirosina'
-            }
+            st.markdown("#### 📋 Información de la familia")
+            show_pfam_info(familia)
 
-            st.markdown("**Top 5 aminoácidos:**")
-            for aa, pct in top_aa:
-                st.text(f"{aa} ({nombres_aa.get(aa, '')}): {pct:.1f}%")
+            st.markdown("#### 📊 Top 5 predicciones")
+            df_probs = pd.DataFrame({
+                "Familia": [t[0] for t in top],
+                "Probabilidad": [t[1] for t in top],
+            })
+            df_probs["Prob. (%)"] = [f"{t[1]:.2%}" for t in top]
 
+            col_p1, col_p2 = st.columns([1, 1])
+            with col_p1:
+                st.bar_chart(df_probs[["Familia", "Probabilidad"]].set_index("Familia"), use_container_width=True)
+            with col_p2:
+                for i, (fam, prob) in enumerate(top):
+                    pfam_info = get_pfam_info(fam)
+                    fam_name = pfam_info.get('nombre', '') if pfam_info else ''
+                    bar_color = "#11998e" if i == 0 else "#a8d8ea"
+                    st.markdown(f"""
+                    <div style="display:flex;align-items:center;margin-bottom:0.5rem;">
+                        <div style="flex:1;">
+                            <strong>{fam}</strong>
+                            {f'<br><small>{fam_name}</small>' if fam_name else ''}
+                        </div>
+                        <div style="width:120px;background:#e0e0e0;border-radius:8px;overflow:hidden;height:24px;">
+                            <div style="width:{prob*100:.0f}%;background:{bar_color};height:100%;border-radius:8px;"></div>
+                        </div>
+                        <div style="width:60px;text-align:right;font-weight:bold;">{prob:.1%}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+    else:
+        st.warning("Ingresa una secuencia para predecir")
+
+if secuencia_input.strip():
+    secuencia_limpia = ''.join(
+        c for c in secuencia_input.upper()
+        if c in 'ACDEFGHIKLMNPQRSTVWY'
+    )
+
+    if secuencia_limpia:
+        st.markdown("---")
+        st.markdown("### 🧪 Análisis de Composición")
+
+        composicion = {
+            aa: secuencia_limpia.count(aa) / len(secuencia_limpia) * 100
+            for aa in AMINOACIDOS
+        }
+
+        col_c1, col_c2 = st.columns([1, 1])
+
+        with col_c1:
+            st.markdown("#### Composición por aminoácido")
             df_comp = pd.DataFrame({
-                "Aminoácido": list(AMINOACIDOS),
+                "Aminoácido": [f"{aa} ({AMINOACIDOS_INFO[aa]['abreviatura']})" for aa in AMINOACIDOS],
                 "Composición (%)": [composicion[aa] for aa in AMINOACIDOS]
             })
             st.bar_chart(df_comp.set_index("Aminoácido"), use_container_width=True)
-    else:
-        st.info("Ingresa una secuencia para ver estadísticas")
+
+        with col_c2:
+            st.markdown("#### Distribución por tipo")
+            tipos_count = {}
+            for aa in AMINOACIDOS:
+                tipo = get_aa_tipo(aa)
+                tipos_count[tipo] = tipos_count.get(tipo, 0) + secuencia_limpia.count(aa)
+
+            tipos_pct = {k: v / len(secuencia_limpia) * 100 for k, v in tipos_count.items()}
+            df_tipos = pd.DataFrame({
+                "Tipo": list(tipos_pct.keys()),
+                "Porcentaje (%)": list(tipos_pct.values())
+            })
+            st.bar_chart(df_tipos.set_index("Tipo"), use_container_width=True)
+
+        st.markdown("### 📖 Detalle de aminoácidos presentes")
+        top_aa = sorted(composicion.items(), key=lambda x: x[1], reverse=True)
+        significant_aa = [(aa, pct) for aa, pct in top_aa if pct > 0]
+
+        aa_cols = st.columns(min(len(significant_aa), 5))
+        for idx, (aa, pct) in enumerate(significant_aa[:5]):
+            with aa_cols[idx]:
+                info = AMINOACIDOS_INFO.get(aa, {})
+                tipo = get_aa_tipo(aa)
+                color = TIPO_COLORES.get(tipo, '#CCC')
+                st.markdown(f"""
+                <div style="background:{color}15;border:2px solid {color};border-radius:10px;padding:0.8rem;text-align:center;">
+                    <div style="font-size:2rem;font-weight:bold;color:{color};">{aa}</div>
+                    <div style="font-size:0.85rem;font-weight:bold;">{info.get('nombre', aa)}</div>
+                    <div style="font-size:1.2rem;font-weight:bold;color:{color};">{pct:.1f}%</div>
+                    <div style="font-size:0.7rem;color:#666;">{info.get('tipo', '')}</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+        with st.expander("Ver detalles completos de todos los aminoácidos presentes"):
+            for aa, pct in significant_aa:
+                info = AMINOACIDOS_INFO.get(aa, {})
+                if not info:
+                    continue
+                tipo = get_aa_tipo(aa)
+                color = TIPO_COLORES.get(tipo, '#CCC')
+                esencial = "Sí" if info.get('esencial') else "No"
+                st.markdown(f"""
+                <div class="aa-card" style="border-left-color:{color};">
+                    <strong style="font-size:1.3em;color:{color};">{aa}</strong> — {info['nombre']} ({info['abreviatura']})
+                    <span style="float:right;font-weight:bold;color:{color};">{pct:.1f}%</span><br>
+                    <small>
+                    📦 Tipo: {info['tipo']} | 
+                    ⚖️ PM: {info['peso_molecular']} Da | 
+                    ⚡ Carga: {info['carga']} | 
+                    💧 Hidrofobicidad: {info['hidrofobicidad']} | 
+                    ✅ Esencial: {esencial}
+                    </small><br>
+                    <small>🔬 {info.get('descripcion', '')}</small><br>
+                    <small>📍 {info.get('donde_se_encuentra', '')}</small><br>
+                    <small>🧪 {info.get('propiedades_quimicas', '')}</small>
+                </div>
+                """, unsafe_allow_html=True)
 
 st.markdown("---")
 st.markdown("""
-<div style='text-align: center; color: gray;'>
-<small>Clasificador de Proteínas v3.0 | PyTorch MLP 5513 familias (92%) | Dataset: Pfam</small>
+<div style='text-align: center; padding: 1rem;'>
+    <div style='display: inline-flex; gap: 2rem; color: #888; font-size: 0.85rem;'>
+        <span>🧬 Clasificador de Proteínas v3.0</span>
+        <span>🤖 PyTorch MLP | 5,513 familias | 92% precisión</span>
+        <span>📊 Dataset: Pfam</span>
+        <span>☁️ Hugging Face Spaces</span>
+    </div>
 </div>
 """, unsafe_allow_html=True)
