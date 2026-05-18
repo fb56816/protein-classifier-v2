@@ -1,6 +1,7 @@
 """
-Interfaz visual para el Clasificador de Familias de Proteínas.
-Incluye información biológica detallada de aminoácidos y familias Pfam.
+Interfaz visual para el Clasificador de Familias de Proteinas.
+Incluye informacion biologica detallada de aminoacidos y familias Pfam.
+Soporte multilingual (es/en/pt/fr/de).
 Ejecutar con: streamlit run streamlit_app.py
 """
 
@@ -15,6 +16,7 @@ import torch
 import torch.nn as nn
 import pickle
 from datos_biologicos import AMINOACIDOS_INFO, PFAM_DESCRIPCIONES, get_pfam_info
+from traducciones import t, IDIOMAS_OPCIONES
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 if SCRIPT_DIR not in sys.path:
@@ -55,15 +57,6 @@ GRUPOS_AA = {
     'aliphatic': 'ILV',
     'tiny': 'AGS',
     'special': 'CP',
-}
-
-TIPO_EMOJI = {
-    'No polar': '🔴',
-    'Polar': '🔵',
-    'Cargado positivamente': '⚡',
-    'Cargado negativamente': '🔻',
-    'Aromático': '🟣',
-    'Especial': '🟡',
 }
 
 
@@ -136,21 +129,42 @@ def extraer_caracteristicas_manuales(secuencia):
     return feats
 
 
-def get_aa_tipo(code):
+TIPO_KEYS = {
+    'No polar': 'nonpolar',
+    'Polar': 'polar',
+    'Cargado positivamente': 'positively_charged',
+    'Cargado negativamente': 'negatively_charged',
+    'Aromatico': 'aromatic',
+    'Arom\u00e1tico': 'aromatic',
+    'Especial': 'special',
+}
+
+TIPO_EMOJI = {
+    'nonpolar': '\U0001f534',
+    'polar': '\U0001f535',
+    'positively_charged': '\u26a1',
+    'negatively_charged': '\U0001f53b',
+    'aromatic': '\U0001f7e3',
+    'special': '\U0001f7e1',
+}
+
+
+def get_aa_tipo_key(code):
     info = AMINOACIDOS_INFO.get(code, {})
     tipo = info.get('tipo', '')
-    if 'cargado negativamente' in tipo.lower() or 'ácido' in tipo.lower():
-        return 'Cargado negativamente'
-    elif 'cargado positivamente' in tipo.lower() or 'básico' in tipo.lower():
-        return 'Cargado positivamente'
-    elif 'aromático' in tipo.lower():
-        return 'Aromático'
-    elif 'especial' in tipo.lower() or 'imino' in tipo.lower():
-        return 'Especial'
-    elif 'polar' in tipo.lower():
-        return 'Polar'
+    tipo_lower = tipo.lower()
+    if 'cargado negativamente' in tipo_lower or '\u00e1cido' in tipo_lower:
+        return 'negatively_charged'
+    elif 'cargado positivamente' in tipo_lower or 'b\u00e1sico' in tipo_lower:
+        return 'positively_charged'
+    elif 'arom\u00e1tico' in tipo_lower:
+        return 'aromatic'
+    elif 'especial' in tipo_lower or 'imino' in tipo_lower:
+        return 'special'
+    elif 'polar' in tipo_lower:
+        return 'polar'
     else:
-        return 'No polar'
+        return 'nonpolar'
 
 
 def format_seq_colored(secuencia, max_len=80):
@@ -163,14 +177,6 @@ def format_seq_colored(secuencia, max_len=80):
     if len(secuencia) > max_len:
         result += f"\n... ({len(secuencia)} aa total)"
     return result
-
-
-st.set_page_config(
-    page_title="Clasificador de Proteínas v3",
-    page_icon="🧬",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
 
 
 class ProteinMLP(nn.Module):
@@ -272,24 +278,41 @@ def predecir_familia(secuencia):
     return familia, top_predicciones
 
 
+# ── LANGUAGE SETUP ──
+
+st.set_page_config(
+    page_title="Protein Classifier v3",
+    page_icon="\U0001f9ec",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+lang_display = st.sidebar.selectbox(
+    "\U0001f310",
+    options=list(IDIOMAS_OPCIONES.keys()),
+    index=0,
+    key="lang_selector_global",
+)
+lang = IDIOMAS_OPCIONES[lang_display]
+
 # ── SIDEBAR ──
 
 with st.sidebar:
-    st.header("Panel de Control")
+    st.header(t('sidebar_header', lang))
 
-    st.subheader("Modelo Actual")
+    st.subheader(t('model_subtitle', lang))
     col_m1, col_m2 = st.columns(2)
     with col_m1:
-        st.metric("Familias", f"{len(encoder.classes_):,}")
-        st.metric("Features", model_info.get('num_features', 'N/A'))
+        st.metric(t('families', lang), f"{len(encoder.classes_):,}")
+        st.metric(t('features', lang), model_info.get('num_features', 'N/A'))
     with col_m2:
-        st.metric("Precision", f"{model_info.get('accuracy', 0.92):.1%}")
-        st.metric("Embeddings", "No")
+        st.metric(t('precision', lang), f"{model_info.get('accuracy', 0.92):.1%}")
+        st.metric(t('embeddings', lang), t('no', lang))
 
     st.divider()
-    st.subheader("Buscar Familia Pfam")
+    st.subheader(t('search_family', lang))
     familias = encoder.classes_
-    search_fam = st.text_input("Nombre de familia:", placeholder="PF00001...")
+    search_fam = st.text_input(t('family_name', lang), placeholder=t('family_placeholder', lang))
     filtered = [f for f in familias if search_fam.upper() in f.upper()] if search_fam else []
     if search_fam:
         if filtered:
@@ -298,57 +321,57 @@ with st.sidebar:
                 if pfam_info:
                     st.write(f"**{fam}** - {pfam_info.get('nombre', '')}")
                 else:
-                    st.write(f"  {fam}")
+                    st.write(f" {fam}")
             if len(filtered) > 30:
-                st.write(f"  ... y {len(filtered) - 30} mas")
+                st.write(t('and_more', lang, count=len(filtered) - 30))
         else:
-            st.warning("No se encontraron familias")
+            st.warning(t('no_families_found', lang))
 
     st.divider()
-    st.subheader("Buscar Aminoacido")
-    aa_search = st.text_input("Codigo o nombre:", placeholder="A, Ala, Alanina...")
+    st.subheader(t('search_aa', lang))
+    aa_search = st.text_input(t('aa_code_name', lang), placeholder=t('aa_placeholder', lang))
     if aa_search:
         matches = []
         for code, info in AMINOACIDOS_INFO.items():
             if (aa_search.upper() in code.upper()
-                or aa_search.lower() in info['nombre'].lower()
-                or aa_search.lower() in info['abreviatura'].lower()):
+                    or aa_search.lower() in info['nombre'].lower()
+                    or aa_search.lower() in info['abreviatura'].lower()):
                 matches.append((code, info))
         if matches:
             for code, info in matches:
-                tipo = get_aa_tipo(code)
-                emoji = TIPO_EMOJI.get(tipo, '⬜')
-                esencial = "Si" if info.get('esencial') else "No"
+                tipo_key = get_aa_tipo_key(code)
+                emoji = TIPO_EMOJI.get(tipo_key, '\u2b1c')
+                esencial = t('yes', lang) if info.get('esencial') else t('no', lang)
                 st.write(f"{emoji} **{code}** - {info['nombre']} ({info['abreviatura']})")
-                st.caption(f"{info['tipo']} | PM: {info['peso_molecular']} Da | Carga: {info['carga']} | Esencial: {esencial}")
-                with st.expander(f"Mas info sobre {info['nombre']}"):
-                    st.write(f"**Descripcion:** {info.get('descripcion', '')}")
-                    st.write(f"**Donde se encuentra:** {info.get('donde_se_encuentra', '')}")
-                    st.write(f"**Funcion biologica:** {info.get('funcion_biologica', '')}")
-                    st.write(f"**Propiedades quimicas:** {info.get('propiedades_quimicas', '')}")
-                    st.write(f"**Hidrofobicidad:** {info.get('hidrofobicidad', '')}")
-                    st.write(f"**Enfermedades relacionadas:** {info.get('enfermedades_relacionadas', '')}")
+                st.caption(f"{t(tipo_key, lang)} | PM: {info['peso_molecular']} Da | {t('charge', lang)} {info['carga']} | {t('essential_label', lang)} {esencial}")
+                with st.expander(t('more_info_about', lang, name=info['nombre'])):
+                    st.write(f"**{t('description', lang)}** {info.get('descripcion', '')}")
+                    st.write(f"**{t('where_found', lang)}** {info.get('donde_se_encuentra', '')}")
+                    st.write(f"**{t('biological_function', lang)}** {info.get('funcion_biologica', '')}")
+                    st.write(f"**{t('chemical_properties', lang)}** {info.get('propiedades_quimicas', '')}")
+                    st.write(f"**{t('hydrophobicity', lang)}** {info.get('hidrofobicidad', '')}")
+                    st.write(f"**{t('related_diseases', lang)}** {info.get('enfermedades_relacionadas', '')}")
         else:
-            st.warning("No encontrado")
+            st.warning(t('aa_not_found', lang))
     else:
-        st.caption("Leyenda de tipos:")
-        for tipo, emoji in TIPO_EMOJI.items():
-            st.write(f"{emoji} {tipo}")
+        st.caption(t('type_legend', lang))
+        for tipo_key, emoji in TIPO_EMOJI.items():
+            st.write(f"{emoji} {t(tipo_key, lang)}")
 
 # ── MAIN AREA ──
 
-st.title("Clasificador de Familias de Proteinas")
-st.caption("IA para clasificacion de proteinas | 5,513 familias Pfam | Precision: 92% | PyTorch MLP")
+st.title(t('main_title', lang))
+st.caption(t('main_caption', lang))
 
 st.divider()
 
-st.subheader("Ingresa tu secuencia proteica")
+st.subheader(t('enter_sequence', lang))
 
 secuencia_input = st.text_area(
-    "Secuencia de aminoacidos:",
+    t('sequence_label', lang),
     height=120,
-    placeholder="Ej: MKWVTFISLLFLFSSAYSRGVFRDTHKSEIAHRFKDLGEEHFKGLV...",
-    help="Ingresa la secuencia usando los 20 aminoacidos estandar (A C D E F G H I K L M N P Q R S T V W Y)"
+    placeholder=t('sequence_placeholder', lang),
+    help=t('sequence_help', lang)
 )
 
 if secuencia_input.strip():
@@ -358,76 +381,76 @@ if secuencia_input.strip():
     )
 
     if secuencia_limpia:
-        st.write("**Secuencia analizada:**")
+        st.write(f"**{t('analyzed_sequence', lang)}**")
         st.code(format_seq_colored(secuencia_limpia), language=None)
 
         col_s1, col_s2, col_s3, col_s4 = st.columns(4)
         with col_s1:
-            st.metric("Longitud", f"{len(secuencia_limpia)} aa")
+            st.metric(t('length', lang), f"{len(secuencia_limpia)} aa")
         with col_s2:
             peso = len(secuencia_limpia) * 110
-            st.metric("Peso aprox.", f"{peso:,} Da")
+            st.metric(t('approx_weight', lang), f"{peso:,} Da")
         with col_s3:
             pct_charged = ((secuencia_limpia.count('K') + secuencia_limpia.count('R') + secuencia_limpia.count('H') + secuencia_limpia.count('D') + secuencia_limpia.count('E')) / len(secuencia_limpia)) * 100
-            st.metric("Cargados", f"{pct_charged:.1f}%")
+            st.metric(t('charged', lang), f"{pct_charged:.1f}%")
         with col_s4:
             pct_hydrophobic = sum(secuencia_limpia.count(aa) for aa in 'AILMFVW') / len(secuencia_limpia) * 100
-            st.metric("Hidrofobicos", f"{pct_hydrophobic:.1f}%")
+            st.metric(t('hydrophobic', lang), f"{pct_hydrophobic:.1f}%")
 
-if st.button("Predecir Familia", type="primary", use_container_width=True):
-    if secuencia_input.strip():
-        secuencia_limpia = ''.join(
-            c for c in secuencia_input.upper()
-            if c in 'ACDEFGHIKLMNPQRSTVWY'
-        )
+        if st.button(t('predict_button', lang), type="primary", use_container_width=True):
+            if secuencia_input.strip():
+                secuencia_limpia = ''.join(
+                    c for c in secuencia_input.upper()
+                    if c in 'ACDEFGHIKLMNPQRSTVWY'
+                )
 
-        if len(secuencia_limpia) < 10:
-            st.error("La secuencia es muy corta (minimo 10 aminoacidos)")
-        else:
-            with st.spinner("Analizando secuencia con IA..."):
-                familia, top = predecir_familia(secuencia_limpia)
+                if len(secuencia_limpia) < 10:
+                    st.error(t('sequence_too_short', lang))
+                else:
+                    with st.spinner(t('analyzing', lang)):
+                        familia, top = predecir_familia(secuencia_limpia)
 
-            st.success(f"Familia Predicha: **{familia}**  |  Confianza: **{top[0][1]:.1%}**")
+                    st.success(f"{t('predicted_family', lang)} **{familia}** | {t('confidence', lang)} **{top[0][1]:.1%}**")
 
-            st.subheader("Informacion de la familia")
-            pfam_info = get_pfam_info(familia)
-            if pfam_info:
-                col_info1, col_info2 = st.columns(2)
-                with col_info1:
-                    st.write(f"**Nombre:** {pfam_info.get('nombre', '')}")
-                    st.write(f"**Tipo:** {pfam_info.get('tipo', '')}")
-                    st.write(f"**Organismos:** {pfam_info.get('organismos', '')}")
-                with col_info2:
-                    st.write(f"**Funcion:** {pfam_info.get('funcion', '')}")
-                st.info(pfam_info.get('descripcion', ''))
-            else:
-                st.info(f"Informacion detallada de {familia} no disponible en la base de datos local.")
+                    st.subheader(t('family_info', lang))
+                    pfam_info = get_pfam_info(familia)
+                    if pfam_info:
+                        col_info1, col_info2 = st.columns(2)
+                        with col_info1:
+                            st.write(f"**{t('name', lang)}** {pfam_info.get('nombre', '')}")
+                            st.write(f"**{t('type', lang)}** {pfam_info.get('tipo', '')}")
+                            st.write(f"**{t('organisms', lang)}** {pfam_info.get('organismos', '')}")
+                        with col_info2:
+                            st.write(f"**{t('function', lang)}** {pfam_info.get('funcion', '')}")
+                            st.info(pfam_info.get('descripcion', ''))
+                    else:
+                        st.info(t('family_not_available', lang, family=familia))
 
-            st.subheader("Top 5 predicciones")
-            df_probs = pd.DataFrame({
-                "Familia": [t[0] for t in top],
-                "Probabilidad": [t[1] for t in top],
-            })
+                    st.subheader(t('top5_predictions', lang))
+                    df_probs = pd.DataFrame({
+                        t('family_col', lang): [fam_t[0] for fam_t in top],
+                        t('probability_col', lang): [fam_t[1] for fam_t in top],
+                    })
 
-            col_p1, col_p2 = st.columns([1, 1])
-            with col_p1:
-                st.bar_chart(df_probs.set_index("Familia"), use_container_width=True)
+                    col_p1, col_p2 = st.columns([1, 1])
+                    with col_p1:
+                        st.bar_chart(df_probs.set_index(t('family_col', lang)), use_container_width=True)
 
-            with col_p2:
-                for i, (fam, prob) in enumerate(top):
-                    pfam_info_top = get_pfam_info(fam)
-                    fam_name = pfam_info_top.get('nombre', '') if pfam_info_top else ''
-                    label = f"**{fam}**" + (f" - {fam_name}" if fam_name else "")
-                    st.write(label)
-                    st.progress(min(prob, 1.0), text=f"{prob:.1%}")
+                    with col_p2:
+                        for i, (fam, prob) in enumerate(top):
+                            pfam_info_top = get_pfam_info(fam)
+                            fam_name = pfam_info_top.get('nombre', '') if pfam_info_top else ''
+                            label = f"**{fam}**" + (f" - {fam_name}" if fam_name else "")
+                            st.write(label)
+                            st.progress(min(prob, 1.0), text=f"{prob:.1%}")
 
-            st.dataframe(
-                df_probs.style.format({"Probabilidad": "{:.2%}"}),
-                use_container_width=True,
-                hide_index=True
-            )
+                    st.dataframe(
+                        df_probs.style.format({t('probability_col', lang): "{:.2%}"}),
+                        use_container_width=True,
+                        hide_index=True
+                    )
     else:
-        st.warning("Ingresa una secuencia para predecir")
+        st.warning(t('enter_to_predict', lang))
 
 if secuencia_input.strip():
     secuencia_limpia = ''.join(
@@ -437,7 +460,7 @@ if secuencia_input.strip():
 
     if secuencia_limpia:
         st.divider()
-        st.subheader("Analisis de Composicion")
+        st.subheader(t('composition_analysis', lang))
 
         composicion = {
             aa: secuencia_limpia.count(aa) / len(secuencia_limpia) * 100
@@ -447,28 +470,28 @@ if secuencia_input.strip():
         col_c1, col_c2 = st.columns([1, 1])
 
         with col_c1:
-            st.write("**Composicion por aminoacido**")
+            st.write(f"**{t('composition_by_aa', lang)}**")
             df_comp = pd.DataFrame({
-                "Aminoacido": [f"{aa} ({AMINOACIDOS_INFO[aa]['abreviatura']})" for aa in AMINOACIDOS],
-                "Composicion (%)": [composicion[aa] for aa in AMINOACIDOS]
+                t('family_col', lang): [f"{aa} ({AMINOACIDOS_INFO[aa]['abreviatura']})" for aa in AMINOACIDOS],
+                t('composition_pct', lang): [composicion[aa] for aa in AMINOACIDOS]
             })
-            st.bar_chart(df_comp.set_index("Aminoacido"), use_container_width=True)
+            st.bar_chart(df_comp.set_index(t('family_col', lang)), use_container_width=True)
 
         with col_c2:
-            st.write("**Distribucion por tipo**")
+            st.write(f"**{t('distribution_by_type', lang)}**")
             tipos_count = {}
             for aa in AMINOACIDOS:
-                tipo = get_aa_tipo(aa)
-                tipos_count[tipo] = tipos_count.get(tipo, 0) + secuencia_limpia.count(aa)
+                tipo_key = get_aa_tipo_key(aa)
+                tipos_count[tipo_key] = tipos_count.get(tipo_key, 0) + secuencia_limpia.count(aa)
 
             tipos_pct = {k: v / len(secuencia_limpia) * 100 for k, v in tipos_count.items()}
             df_tipos = pd.DataFrame({
-                "Tipo": [f"{TIPO_EMOJI.get(t, '')} {t}" for t in tipos_pct.keys()],
-                "Porcentaje (%)": list(tipos_pct.values())
+                t('type', lang): [f"{TIPO_EMOJI.get(tk, '')} {t(tk, lang)}" for tk in tipos_pct.keys()],
+                t('percentage', lang): list(tipos_pct.values())
             })
-            st.bar_chart(df_tipos.set_index("Tipo"), use_container_width=True)
+            st.bar_chart(df_tipos.set_index(t('type', lang)), use_container_width=True)
 
-        st.subheader("Top 5 aminoacidos presentes")
+        st.subheader(t('top5_aa', lang))
         top_aa = sorted(composicion.items(), key=lambda x: x[1], reverse=True)
         significant_aa = [(aa, pct) for aa, pct in top_aa if pct > 0]
 
@@ -476,39 +499,39 @@ if secuencia_input.strip():
         for idx, (aa, pct) in enumerate(significant_aa[:5]):
             with aa_cols[idx]:
                 info = AMINOACIDOS_INFO.get(aa, {})
-                tipo = get_aa_tipo(aa)
-                emoji = TIPO_EMOJI.get(tipo, '')
-                esencial = "Esencial" if info.get('esencial') else "No esencial"
+                tipo_key = get_aa_tipo_key(aa)
+                emoji = TIPO_EMOJI.get(tipo_key, '')
+                esencial = t('essential', lang) if info.get('esencial') else t('not_essential', lang)
                 st.metric(
                     label=f"{emoji} {aa} - {info.get('nombre', aa)}",
                     value=f"{pct:.1f}%",
-                    delta=f"{tipo} | {esencial}"
+                    delta=f"{t(tipo_key, lang)} | {esencial}"
                 )
 
-        with st.expander("Ver detalles completos de todos los aminoacidos presentes"):
+        with st.expander(t('view_full_details', lang)):
             for aa, pct in significant_aa:
                 info = AMINOACIDOS_INFO.get(aa, {})
                 if not info:
                     continue
-                tipo = get_aa_tipo(aa)
-                emoji = TIPO_EMOJI.get(tipo, '')
-                esencial = "Si" if info.get('esencial') else "No"
+                tipo_key = get_aa_tipo_key(aa)
+                emoji = TIPO_EMOJI.get(tipo_key, '')
+                esencial = t('yes', lang) if info.get('esencial') else t('no', lang)
 
-                st.write(f"### {emoji} {aa} - {info['nombre']} ({info['abreviatura']})  —  **{pct:.1f}%**")
+                st.write(f"### {emoji} {aa} - {info['nombre']} ({info['abreviatura']}) — **{pct:.1f}%**")
                 col_d1, col_d2 = st.columns(2)
                 with col_d1:
-                    st.write(f"- **Tipo:** {info['tipo']}")
-                    st.write(f"- **Peso molecular:** {info['peso_molecular']} Da")
-                    st.write(f"- **Carga:** {info['carga']}")
-                    st.write(f"- **Hidrofobicidad:** {info['hidrofobicidad']}")
-                    st.write(f"- **Esencial:** {esencial}")
+                    st.write(f"- **{t('type', lang)}** {info['tipo']}")
+                    st.write(f"- **{t('molecular_weight', lang)}** {info['peso_molecular']} Da")
+                    st.write(f"- **{t('charge', lang)}** {info['carga']}")
+                    st.write(f"- **{t('hydrophobicity', lang)}** {info.get('hidrofobicidad', '')}")
+                    st.write(f"- **{t('essential_label', lang)}** {esencial}")
                 with col_d2:
-                    st.write(f"- **Descripcion:** {info.get('descripcion', '')}")
-                    st.write(f"- **Donde se encuentra:** {info.get('donde_se_encuentra', '')}")
-                    st.write(f"- **Funcion biologica:** {info.get('funcion_biologica', '')}")
-                    st.write(f"- **Propiedades quimicas:** {info.get('propiedades_quimicas', '')}")
-                    st.write(f"- **Enfermedades:** {info.get('enfermedades_relacionadas', '')}")
+                    st.write(f"- **{t('description', lang)}** {info.get('descripcion', '')}")
+                    st.write(f"- **{t('where_found', lang)}** {info.get('donde_se_encuentra', '')}")
+                    st.write(f"- **{t('biological_function', lang)}** {info.get('funcion_biologica', '')}")
+                    st.write(f"- **{t('chemical_properties', lang)}** {info.get('propiedades_quimicas', '')}")
+                    st.write(f"- **{t('related_diseases', lang)}** {info.get('enfermedades_relacionadas', '')}")
                 st.divider()
 
 st.divider()
-st.caption("Clasificador de Proteinas v3.0 | PyTorch MLP | 5,513 familias | 92% precision | Dataset: Pfam | Hugging Face Spaces")
+st.caption(t('footer', lang))
