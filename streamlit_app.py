@@ -1,6 +1,5 @@
 """
 Interfaz visual para el Clasificador de Familias de Proteínas.
-Soporta embeddings ESM-2 + features manuales.
 Incluye información biológica detallada de aminoácidos y familias Pfam.
 Ejecutar con: streamlit run streamlit_app.py
 """
@@ -58,24 +57,13 @@ GRUPOS_AA = {
     'special': 'CP',
 }
 
-GRUPOS_COLORES = {
-    'nonpolar': '#FF6B6B',
-    'polar_uncharged': '#4ECDC4',
-    'positively_charged': '#45B7D1',
-    'negatively_charged': '#F7DC6F',
-    'aromatic': '#BB8FCE',
-    'aliphatic': '#E59866',
-    'tiny': '#82E0AA',
-    'special': '#F1948A',
-}
-
-TIPO_COLORES = {
-    'No polar': '#FF6B6B',
-    'Polar': '#4ECDC4',
-    'Cargado positivamente': '#45B7D1',
-    'Cargado negativamente': '#F7DC6F',
-    'Aromático': '#BB8FCE',
-    'Especial': '#F1948A',
+TIPO_EMOJI = {
+    'No polar': '🔴',
+    'Polar': '🔵',
+    'Cargado positivamente': '⚡',
+    'Cargado negativamente': '🔻',
+    'Aromático': '🟣',
+    'Especial': '🟡',
 }
 
 
@@ -165,32 +153,16 @@ def get_aa_tipo(code):
         return 'No polar'
 
 
-def color_seq_bar(secuencia):
-    colored = []
-    for aa in secuencia:
-        tipo = get_aa_tipo(aa)
-        color = TIPO_COLORES.get(tipo, '#CCCCCC')
-        colored.append(
-            f'<span style="background-color:{color};color:#1a1a2e;padding:2px 4px;'
-            f'border-radius:3px;font-family:monospace;font-size:13px;font-weight:bold;'
-            f'margin:1px;display:inline-block;" title="{AMINOACIDOS_INFO.get(aa, {}).get("nombre", aa)} ({tipo})">{aa}</span>'
-        )
-    return ''.join(colored)
-
-
-def show_pfam_info(familia_id):
-    info = get_pfam_info(familia_id)
-    if info:
-        st.markdown(f"#### {info.get('nombre', familia_id)}")
-        st.markdown(f"**{info.get('descripcion', '')}**")
-        col_a, col_b = st.columns(2)
-        with col_a:
-            st.markdown(f"🏷️ **Tipo:** {info.get('tipo', 'N/A')}")
-            st.markdown(f"🌍 **Organismos:** {info.get('organismos', 'N/A')}")
-        with col_b:
-            st.markdown(f"⚡ **Función:** {info.get('funcion', 'N/A')}")
-    else:
-        st.info(f"Información detallada de {familia_id} no disponible en la base de datos local.")
+def format_seq_colored(secuencia, max_len=80):
+    lines = []
+    for i in range(0, min(len(secuencia), max_len), 10):
+        chunk = secuencia[i:i+10]
+        labeled = " ".join(f"{aa}" for aa in chunk)
+        lines.append(labeled)
+    result = "\n".join(lines)
+    if len(secuencia) > max_len:
+        result += f"\n... ({len(secuencia)} aa total)"
+    return result
 
 
 st.set_page_config(
@@ -300,145 +272,83 @@ def predecir_familia(secuencia):
     return familia, top_predicciones
 
 
-st.markdown("""
-<style>
-    .main-header {
-        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
-        padding: 2rem;
-        border-radius: 15px;
-        margin-bottom: 1.5rem;
-    }
-    .main-header h1 {
-        color: #e94560;
-        margin: 0;
-        font-size: 2.5rem;
-    }
-    .main-header p {
-        color: #a8d8ea;
-        margin: 0.5rem 0 0 0;
-        font-size: 1.1rem;
-    }
-    .metric-card {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 1rem;
-        border-radius: 10px;
-        color: white;
-        text-align: center;
-    }
-    .result-card {
-        background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
-        padding: 1.5rem;
-        border-radius: 12px;
-        color: white;
-        text-align: center;
-        margin-bottom: 1rem;
-    }
-    .aa-card {
-        background: #f8f9fa;
-        border-left: 4px solid #4ECDC4;
-        padding: 0.75rem 1rem;
-        border-radius: 0 8px 8px 0;
-        margin-bottom: 0.5rem;
-    }
-    .pfam-card {
-        background: linear-gradient(135deg, #2c3e50 0%, #3498db 100%);
-        padding: 1rem;
-        border-radius: 10px;
-        color: white;
-    }
-    .seq-display {
-        background: #1a1a2e;
-        padding: 1rem;
-        border-radius: 8px;
-        overflow-x: auto;
-        white-space: normal;
-        word-wrap: break-word;
-        line-height: 2;
-    }
-    div[data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #1a1a2e 0%, #16213e 100%);
-    }
-    div[data-testid="stSidebar"] * {
-        color: #e0e0e0 !important;
-    }
-    .legend-item {
-        display: inline-block;
-        margin: 0.2rem 0.4rem;
-    }
-</style>
-""", unsafe_allow_html=True)
-
-st.markdown("""
-<div class="main-header">
-    <h1>🧬 Clasificador de Familias de Proteínas</h1>
-    <p>IA para clasificación de proteínas basada en 5,513 familias Pfam | Precisión: 92%</p>
-</div>
-""", unsafe_allow_html=True)
+# ── SIDEBAR ──
 
 with st.sidebar:
-    st.markdown("## ⚙️ Panel de Control")
+    st.header("Panel de Control")
 
-    st.markdown("### 🧪 Modelo Actual")
+    st.subheader("Modelo Actual")
     col_m1, col_m2 = st.columns(2)
     with col_m1:
         st.metric("Familias", f"{len(encoder.classes_):,}")
         st.metric("Features", model_info.get('num_features', 'N/A'))
     with col_m2:
-        st.metric("Precisión", f"{model_info.get('accuracy', 0.92):.1%}")
-        st.metric("Embeddings", "No" if not use_embeddings else "Sí")
+        st.metric("Precision", f"{model_info.get('accuracy', 0.92):.1%}")
+        st.metric("Embeddings", "No")
 
-    st.markdown("---")
-    st.markdown("### 🔍 Buscar Familia")
+    st.divider()
+    st.subheader("Buscar Familia Pfam")
     familias = encoder.classes_
-    search = st.text_input("Nombre de familia:", placeholder="PF00001...")
-    filtered = [f for f in familias if search.upper() in f.upper()] if search else familias
-    if search and filtered:
-        for fam in filtered[:30]:
-            pfam_info = get_pfam_info(fam)
-            if pfam_info:
-                st.markdown(f"**{fam}** — {pfam_info.get('nombre', '')}")
-            else:
-                st.text(f"  {fam}")
-        if len(filtered) > 30:
-            st.text(f"  ... y {len(filtered) - 30} más")
-    elif search:
-        st.warning("No se encontraron familias")
-    else:
-        st.info("Escribe para buscar entre 5,513 familias")
+    search_fam = st.text_input("Nombre de familia:", placeholder="PF00001...")
+    filtered = [f for f in familias if search_fam.upper() in f.upper()] if search_fam else []
+    if search_fam:
+        if filtered:
+            for fam in filtered[:30]:
+                pfam_info = get_pfam_info(fam)
+                if pfam_info:
+                    st.write(f"**{fam}** - {pfam_info.get('nombre', '')}")
+                else:
+                    st.write(f"  {fam}")
+            if len(filtered) > 30:
+                st.write(f"  ... y {len(filtered) - 30} mas")
+        else:
+            st.warning("No se encontraron familias")
 
-    st.markdown("---")
-    st.markdown("### 🧪 Aminoácidos")
-    aa_search = st.text_input("Buscar aminoácido:", placeholder="A, Ala, Alanina...")
+    st.divider()
+    st.subheader("Buscar Aminoacido")
+    aa_search = st.text_input("Codigo o nombre:", placeholder="A, Ala, Alanina...")
     if aa_search:
         matches = []
         for code, info in AMINOACIDOS_INFO.items():
-            if aa_search.upper() in code.upper() or aa_search.lower() in info['nombre'].lower() or aa_search.lower() in info['abreviatura'].lower():
+            if (aa_search.upper() in code.upper()
+                or aa_search.lower() in info['nombre'].lower()
+                or aa_search.lower() in info['abreviatura'].lower()):
                 matches.append((code, info))
         if matches:
             for code, info in matches:
                 tipo = get_aa_tipo(code)
-                color = TIPO_COLORES.get(tipo, '#CCC')
-                st.markdown(f"""
-                <div class="aa-card" style="border-left-color:{color};">
-                    <strong style="font-size:1.2em;color:{color};">{code}</strong> — {info['nombre']} ({info['abreviatura']})<br>
-                    <small>{info['tipo']} | PM: {info['peso_molecular']} Da | {info['carga']}</small>
-                </div>
-                """, unsafe_allow_html=True)
+                emoji = TIPO_EMOJI.get(tipo, '⬜')
+                esencial = "Si" if info.get('esencial') else "No"
+                st.write(f"{emoji} **{code}** - {info['nombre']} ({info['abreviatura']})")
+                st.caption(f"{info['tipo']} | PM: {info['peso_molecular']} Da | Carga: {info['carga']} | Esencial: {esencial}")
+                with st.expander(f"Mas info sobre {info['nombre']}"):
+                    st.write(f"**Descripcion:** {info.get('descripcion', '')}")
+                    st.write(f"**Donde se encuentra:** {info.get('donde_se_encuentra', '')}")
+                    st.write(f"**Funcion biologica:** {info.get('funcion_biologica', '')}")
+                    st.write(f"**Propiedades quimicas:** {info.get('propiedades_quimicas', '')}")
+                    st.write(f"**Hidrofobicidad:** {info.get('hidrofobicidad', '')}")
+                    st.write(f"**Enfermedades relacionadas:** {info.get('enfermedades_relacionadas', '')}")
         else:
             st.warning("No encontrado")
     else:
-        st.markdown("**Leyenda de colores:**")
-        for tipo, color in TIPO_COLORES.items():
-            st.markdown(f'<span style="background:{color};color:#1a1a2e;padding:2px 8px;border-radius:4px;font-weight:bold;font-size:0.85em;">{tipo}</span>', unsafe_allow_html=True)
+        st.caption("Leyenda de tipos:")
+        for tipo, emoji in TIPO_EMOJI.items():
+            st.write(f"{emoji} {tipo}")
 
-st.markdown("### 📝 Ingresa tu secuencia proteica")
+# ── MAIN AREA ──
+
+st.title("Clasificador de Familias de Proteinas")
+st.caption("IA para clasificacion de proteinas | 5,513 familias Pfam | Precision: 92% | PyTorch MLP")
+
+st.divider()
+
+st.subheader("Ingresa tu secuencia proteica")
 
 secuencia_input = st.text_area(
-    "",
+    "Secuencia de aminoacidos:",
     height=120,
     placeholder="Ej: MKWVTFISLLFLFSSAYSRGVFRDTHKSEIAHRFKDLGEEHFKGLV...",
-    help="Ingresa la secuencia completa de la proteína usando los 20 aminoácidos estándar (A C D E F G H I K L M N P Q R S T V W Y)",
-    label_visibility="collapsed"
+    help="Ingresa la secuencia usando los 20 aminoacidos estandar (A C D E F G H I K L M N P Q R S T V W Y)"
 )
 
 if secuencia_input.strip():
@@ -448,12 +358,8 @@ if secuencia_input.strip():
     )
 
     if secuencia_limpia:
-        st.markdown("#### 🔬 Secuencia analizada")
-        display_seq = secuencia_limpia if len(secuencia_limpia) <= 200 else secuencia_limpia[:200] + f"... ({len(secuencia_limpia)} aa total)"
-        st.markdown(
-            f'<div class="seq-display">{color_seq_bar(display_seq[:200])}</div>',
-            unsafe_allow_html=True
-        )
+        st.write("**Secuencia analizada:**")
+        st.code(format_seq_colored(secuencia_limpia), language=None)
 
         col_s1, col_s2, col_s3, col_s4 = st.columns(4)
         with col_s1:
@@ -466,9 +372,9 @@ if secuencia_input.strip():
             st.metric("Cargados", f"{pct_charged:.1f}%")
         with col_s4:
             pct_hydrophobic = sum(secuencia_limpia.count(aa) for aa in 'AILMFVW') / len(secuencia_limpia) * 100
-            st.metric("Hidrofóbicos", f"{pct_hydrophobic:.1f}%")
+            st.metric("Hidrofobicos", f"{pct_hydrophobic:.1f}%")
 
-if st.button("🧬 Predecir Familia", type="primary", use_container_width=True):
+if st.button("Predecir Familia", type="primary", use_container_width=True):
     if secuencia_input.strip():
         secuencia_limpia = ''.join(
             c for c in secuencia_input.upper()
@@ -476,40 +382,50 @@ if st.button("🧬 Predecir Familia", type="primary", use_container_width=True):
         )
 
         if len(secuencia_limpia) < 10:
-            st.error("La secuencia es muy corta (mínimo 10 aminoácidos)")
+            st.error("La secuencia es muy corta (minimo 10 aminoacidos)")
         else:
             with st.spinner("Analizando secuencia con IA..."):
                 familia, top = predecir_familia(secuencia_limpia)
 
-            st.markdown(f"""
-            <div class="result-card">
-                <h2 style="margin:0;color:white;">🎯 Familia Predicha</h2>
-                <h1 style="margin:0.5rem 0;color:white;">{familia}</h1>
-                <p style="margin:0;color:#e8f5e9;">Confianza: {top[0][1]:.1%}</p>
-            </div>
-            """, unsafe_allow_html=True)
+            st.success(f"Familia Predicha: **{familia}**  |  Confianza: **{top[0][1]:.1%}**")
 
-            st.markdown("#### 📋 Información de la familia")
-            show_pfam_info(familia)
+            st.subheader("Informacion de la familia")
+            pfam_info = get_pfam_info(familia)
+            if pfam_info:
+                col_info1, col_info2 = st.columns(2)
+                with col_info1:
+                    st.write(f"**Nombre:** {pfam_info.get('nombre', '')}")
+                    st.write(f"**Tipo:** {pfam_info.get('tipo', '')}")
+                    st.write(f"**Organismos:** {pfam_info.get('organismos', '')}")
+                with col_info2:
+                    st.write(f"**Funcion:** {pfam_info.get('funcion', '')}")
+                st.info(pfam_info.get('descripcion', ''))
+            else:
+                st.info(f"Informacion detallada de {familia} no disponible en la base de datos local.")
 
-            st.markdown("#### 📊 Top 5 predicciones")
+            st.subheader("Top 5 predicciones")
             df_probs = pd.DataFrame({
                 "Familia": [t[0] for t in top],
                 "Probabilidad": [t[1] for t in top],
             })
-            df_probs["Prob. (%)"] = [f"{t[1]:.2%}" for t in top]
 
             col_p1, col_p2 = st.columns([1, 1])
             with col_p1:
-                st.bar_chart(df_probs[["Familia", "Probabilidad"]].set_index("Familia"), use_container_width=True)
+                st.bar_chart(df_probs.set_index("Familia"), use_container_width=True)
+
             with col_p2:
                 for i, (fam, prob) in enumerate(top):
-                    pfam_info = get_pfam_info(fam)
-                    fam_name = pfam_info.get('nombre', '') if pfam_info else ''
-                    is_top = i == 0
-                    label = f"**{fam}**" + (f" — {fam_name}" if fam_name else "")
-                    st.markdown(label)
+                    pfam_info_top = get_pfam_info(fam)
+                    fam_name = pfam_info_top.get('nombre', '') if pfam_info_top else ''
+                    label = f"**{fam}**" + (f" - {fam_name}" if fam_name else "")
+                    st.write(label)
                     st.progress(min(prob, 1.0), text=f"{prob:.1%}")
+
+            st.dataframe(
+                df_probs.style.format({"Probabilidad": "{:.2%}"}),
+                use_container_width=True,
+                hide_index=True
+            )
     else:
         st.warning("Ingresa una secuencia para predecir")
 
@@ -520,8 +436,8 @@ if secuencia_input.strip():
     )
 
     if secuencia_limpia:
-        st.markdown("---")
-        st.markdown("### 🧪 Análisis de Composición")
+        st.divider()
+        st.subheader("Analisis de Composicion")
 
         composicion = {
             aa: secuencia_limpia.count(aa) / len(secuencia_limpia) * 100
@@ -531,15 +447,15 @@ if secuencia_input.strip():
         col_c1, col_c2 = st.columns([1, 1])
 
         with col_c1:
-            st.markdown("#### Composición por aminoácido")
+            st.write("**Composicion por aminoacido**")
             df_comp = pd.DataFrame({
-                "Aminoácido": [f"{aa} ({AMINOACIDOS_INFO[aa]['abreviatura']})" for aa in AMINOACIDOS],
-                "Composición (%)": [composicion[aa] for aa in AMINOACIDOS]
+                "Aminoacido": [f"{aa} ({AMINOACIDOS_INFO[aa]['abreviatura']})" for aa in AMINOACIDOS],
+                "Composicion (%)": [composicion[aa] for aa in AMINOACIDOS]
             })
-            st.bar_chart(df_comp.set_index("Aminoácido"), use_container_width=True)
+            st.bar_chart(df_comp.set_index("Aminoacido"), use_container_width=True)
 
         with col_c2:
-            st.markdown("#### Distribución por tipo")
+            st.write("**Distribucion por tipo**")
             tipos_count = {}
             for aa in AMINOACIDOS:
                 tipo = get_aa_tipo(aa)
@@ -547,12 +463,12 @@ if secuencia_input.strip():
 
             tipos_pct = {k: v / len(secuencia_limpia) * 100 for k, v in tipos_count.items()}
             df_tipos = pd.DataFrame({
-                "Tipo": list(tipos_pct.keys()),
+                "Tipo": [f"{TIPO_EMOJI.get(t, '')} {t}" for t in tipos_pct.keys()],
                 "Porcentaje (%)": list(tipos_pct.values())
             })
             st.bar_chart(df_tipos.set_index("Tipo"), use_container_width=True)
 
-        st.markdown("### 📖 Detalle de aminoácidos presentes")
+        st.subheader("Top 5 aminoacidos presentes")
         top_aa = sorted(composicion.items(), key=lambda x: x[1], reverse=True)
         significant_aa = [(aa, pct) for aa, pct in top_aa if pct > 0]
 
@@ -561,49 +477,38 @@ if secuencia_input.strip():
             with aa_cols[idx]:
                 info = AMINOACIDOS_INFO.get(aa, {})
                 tipo = get_aa_tipo(aa)
-                color = TIPO_COLORES.get(tipo, '#CCC')
-                st.markdown(f"""
-                <div style="background:{color}15;border:2px solid {color};border-radius:10px;padding:0.8rem;text-align:center;">
-                    <div style="font-size:2rem;font-weight:bold;color:{color};">{aa}</div>
-                    <div style="font-size:0.85rem;font-weight:bold;">{info.get('nombre', aa)}</div>
-                    <div style="font-size:1.2rem;font-weight:bold;color:{color};">{pct:.1f}%</div>
-                    <div style="font-size:0.7rem;color:#666;">{info.get('tipo', '')}</div>
-                </div>
-                """, unsafe_allow_html=True)
+                emoji = TIPO_EMOJI.get(tipo, '')
+                esencial = "Esencial" if info.get('esencial') else "No esencial"
+                st.metric(
+                    label=f"{emoji} {aa} - {info.get('nombre', aa)}",
+                    value=f"{pct:.1f}%",
+                    delta=f"{tipo} | {esencial}"
+                )
 
-        with st.expander("Ver detalles completos de todos los aminoácidos presentes"):
+        with st.expander("Ver detalles completos de todos los aminoacidos presentes"):
             for aa, pct in significant_aa:
                 info = AMINOACIDOS_INFO.get(aa, {})
                 if not info:
                     continue
                 tipo = get_aa_tipo(aa)
-                color = TIPO_COLORES.get(tipo, '#CCC')
-                esencial = "Sí" if info.get('esencial') else "No"
-                st.markdown(f"""
-                <div class="aa-card" style="border-left-color:{color};">
-                    <strong style="font-size:1.3em;color:{color};">{aa}</strong> — {info['nombre']} ({info['abreviatura']})
-                    <span style="float:right;font-weight:bold;color:{color};">{pct:.1f}%</span><br>
-                    <small>
-                    📦 Tipo: {info['tipo']} | 
-                    ⚖️ PM: {info['peso_molecular']} Da | 
-                    ⚡ Carga: {info['carga']} | 
-                    💧 Hidrofobicidad: {info['hidrofobicidad']} | 
-                    ✅ Esencial: {esencial}
-                    </small><br>
-                    <small>🔬 {info.get('descripcion', '')}</small><br>
-                    <small>📍 {info.get('donde_se_encuentra', '')}</small><br>
-                    <small>🧪 {info.get('propiedades_quimicas', '')}</small>
-                </div>
-                """, unsafe_allow_html=True)
+                emoji = TIPO_EMOJI.get(tipo, '')
+                esencial = "Si" if info.get('esencial') else "No"
 
-st.markdown("---")
-st.markdown("""
-<div style='text-align: center; padding: 1rem;'>
-    <div style='display: inline-flex; gap: 2rem; color: #888; font-size: 0.85rem;'>
-        <span>🧬 Clasificador de Proteínas v3.0</span>
-        <span>🤖 PyTorch MLP | 5,513 familias | 92% precisión</span>
-        <span>📊 Dataset: Pfam</span>
-        <span>☁️ Hugging Face Spaces</span>
-    </div>
-</div>
-""", unsafe_allow_html=True)
+                st.write(f"### {emoji} {aa} - {info['nombre']} ({info['abreviatura']})  —  **{pct:.1f}%**")
+                col_d1, col_d2 = st.columns(2)
+                with col_d1:
+                    st.write(f"- **Tipo:** {info['tipo']}")
+                    st.write(f"- **Peso molecular:** {info['peso_molecular']} Da")
+                    st.write(f"- **Carga:** {info['carga']}")
+                    st.write(f"- **Hidrofobicidad:** {info['hidrofobicidad']}")
+                    st.write(f"- **Esencial:** {esencial}")
+                with col_d2:
+                    st.write(f"- **Descripcion:** {info.get('descripcion', '')}")
+                    st.write(f"- **Donde se encuentra:** {info.get('donde_se_encuentra', '')}")
+                    st.write(f"- **Funcion biologica:** {info.get('funcion_biologica', '')}")
+                    st.write(f"- **Propiedades quimicas:** {info.get('propiedades_quimicas', '')}")
+                    st.write(f"- **Enfermedades:** {info.get('enfermedades_relacionadas', '')}")
+                st.divider()
+
+st.divider()
+st.caption("Clasificador de Proteinas v3.0 | PyTorch MLP | 5,513 familias | 92% precision | Dataset: Pfam | Hugging Face Spaces")
