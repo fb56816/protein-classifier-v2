@@ -17,6 +17,25 @@ import torch.nn as nn
 import pickle
 from datos_biologicos import AMINOACIDOS_INFO, PFAM_DESCRIPCIONES, get_pfam_info
 from traducciones import t, IDIOMAS_OPCIONES
+from huggingface_hub import hf_hub_download
+
+HF_MODEL_REPO = "Fb56816/protein-classifier-model"
+MODEL_FILES = ["pfam_model_5513.pt", "pfam_scaler.pkl", "pfam_encoder.pkl"]
+
+
+def ensure_model_files():
+    modelos_dir = os.path.join(SCRIPT_DIR, "modelos")
+    os.makedirs(modelos_dir, exist_ok=True)
+    for fname in MODEL_FILES:
+        local_path = os.path.join(modelos_dir, fname)
+        if not os.path.exists(local_path):
+            st.info(f"Descargando {fname} desde Hugging Face...")
+            downloaded = hf_hub_download(repo_id=HF_MODEL_REPO, filename=fname, local_dir=modelos_dir)
+            if downloaded != local_path:
+                import shutil
+                shutil.move(downloaded, local_path)
+            st.success(f"{fname} descargado correctamente")
+    return modelos_dir
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 if SCRIPT_DIR not in sys.path:
@@ -204,7 +223,8 @@ class ProteinMLP(nn.Module):
 
 @st.cache_resource
 def cargar_modelo():
-    model_path = "modelos/pfam_model_5513.pt"
+    modelos_dir = ensure_model_files()
+    model_path = os.path.join(modelos_dir, "pfam_model_5513.pt")
     use_pytorch = os.path.exists(model_path)
 
     if use_pytorch:
@@ -215,9 +235,9 @@ def cargar_modelo():
         modelo.load_state_dict(checkpoint['model_state_dict'])
         modelo.eval()
 
-        with open("modelos/pfam_encoder.pkl", "rb") as f:
+        with open(os.path.join(modelos_dir, "pfam_encoder.pkl"), "rb") as f:
             encoder = pickle.load(f)
-        with open("modelos/pfam_scaler.pkl", "rb") as f:
+        with open(os.path.join(modelos_dir, "pfam_scaler.pkl"), "rb") as f:
             scaler_manual = pickle.load(f)
 
         info = {
