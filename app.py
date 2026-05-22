@@ -308,7 +308,7 @@ st.set_page_config(
 )
 
 lang_display = st.sidebar.selectbox(
-    "\U0001f310",
+    "\U0001f310 Idioma / Language",
     options=list(IDIOMAS_OPCIONES.keys()),
     index=0,
     key="lang_selector_global",
